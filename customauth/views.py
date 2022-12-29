@@ -1,15 +1,30 @@
-from rest_framework import serializers, generics, status, permissions
+
+from rest_framework import serializers, generics, status
 # from rest_framework.views import APIView
 from rest_framework.response import Response
 from .models import UserAcount
+from rest_framework import permissions
 # from django.conf import settings
 # from django.http import HttpResponse
+from django.http import HttpResponse
+from django.http import Http404
+from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
 from typing import Tuple
 from udyamBackend.settings import CLIENT_ID
 import requests
+from django.core.mail import send_mail,EmailMultiAlternatives
+from .models import BroadCast_Email
+from django.shortcuts import render
+from.models import BroadCast_Email
+from.forms import PostForm
+from django.http import HttpResponseRedirect
 from django.contrib.auth import login, logout
 from rest_framework.authtoken.models import Token
+
+# from models import UserAccount
+# from django.contrib.auth import login, logout
+# from rest_framework.authtoken.models import Token
 
 
 GOOGLE_ID_TOKEN_INFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
@@ -35,7 +50,7 @@ def google_validate(*, id_token: str, email:str) -> bool:
 
 
 def user_create(email, **extra_field) -> UserAcount:
-    # print(extra_field)
+    permission_classes = (permissions.IsAuthenticated,)
     extra_fields = {
         'is_staff': False,
         'is_active': True,
@@ -63,21 +78,62 @@ def user_get_me(*, user: UserAcount):
         'id': user.id,
         'name': user.name,
         'email': user.email,
-        'message': "Your registration was successful!",
+        'message': "You have registeration is complete",
     }
+
+# Custom
+def broadcast_mail(request,subject,created):
+
+
+    if request.method == "GET" and request.user.has_perm("view_broadcast_email"):
+        message = BroadCast_Email.objects.get(subject=subject,created=created).message
+        users = UserAcount.objects.all()
+        list_email_user = [user.email for user in users]
+        n = 100
+        list_group = [
+            list_email_user[i: i + n] for i in range(0, len(list_email_user), n)
+        ]
+        for group in list_group:
+            email = EmailMessage(subject, message, bcc=group)
+            email.content_subtype = "html"
+            email.send()
+
+        return HttpResponse("Mail sent successfully")
+    return HttpResponse("Invalid request")
+
+
+def index(request):
+    
+    subject = None
+    created = None
+    form = None
+    if request.method == "POST" and request.user.has_perm("view_broadcast_email"):
+        form = PostForm(request.POST)
+        if form.is_valid():
+            print(subject)
+            form.save()
+            subject=request.POST['subject']
+            created=request.POST['created']
+            # return HttpResponseRedirect('/thanks/')
+    elif request.user.has_perm("view_broadcast_email"):
+
+        form = PostForm()
+    
+    else :
+        return HttpResponse("Invalid request")
+
+    return render(request, 'index.html',{'form':form,'subject':subject,'created':created})
 
 
 class UserInitApi(generics.GenericAPIView):
     permission_classes = (permissions.IsAuthenticated,)
-    
     class InputSerializer(serializers.Serializer):
         email = serializers.EmailField()
         name = serializers.CharField(required=True)
         college_name = serializers.CharField(required=True)
         year = serializers.CharField(required=True)
         phone_number = serializers.CharField(required=True)
-
-    serializer_class=InputSerializer
+        serializer_class=InputSerializer
 
     def post(self, request, *args, **kwargs):
         # print(request.data)
@@ -98,8 +154,7 @@ class UserInitApi(generics.GenericAPIView):
         response = Response({"token" : token.key},data=user_get_me(user=UserAcount.objects.get(email=email)))
         
         return response
-
-
+      
 class LogoutView(generics.GenericAPIView):
 
     permission_classes = (permissions.IsAuthenticated)
@@ -107,6 +162,6 @@ class LogoutView(generics.GenericAPIView):
     def get(self, request):
         request.user.auth_token.delete()
         logout(request)
-        return Response(status=status.HTTP_200_OK)
-
+        return Response(status=status.HTTP_200_OK)      
             
+

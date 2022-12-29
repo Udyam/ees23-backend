@@ -1,7 +1,10 @@
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Group
 import re
-
+from django.utils import timezone
+from rest_framework import permissions
+from ckeditor_uploader.fields import RichTextUploadingField
+# from django.contrib.auth import Group
 
 def isValid(s):
     Pattern = re.compile("(0|91)?[6-9][0-9]{9}")
@@ -51,17 +54,54 @@ class UserAcount(AbstractBaseUser):
     college_name = models.CharField(max_length=200, blank=False, null=False)
     year = models.CharField(max_length=20, choices=YEARS, blank=False, null=False)
     phone_number = models.CharField(validators=[isValid], max_length=16, blank=False, null=False)
+    group = models.ForeignKey(Group, on_delete=models.CASCADE ,blank=True, null=True)
+
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
     objects = AccountManager()
 
-    def __str__(self):
+    def _str_(self):
         return f"{self.email}"
 
     def has_perm(self, perm, obj=None):
-        return self.is_admin
+        if self.is_admin:
+            print(self.get_all_permissions())
+            return True
+        if self.is_staff and perm in self.get_all_permissions():
+            return True
+        else: 
+            print(self.get_all_permissions())
+        return False
+    
+    # return all the user permission
+    def get_all_permissions(self, obj=None):
+        
+        all_perm=[]
+        if self.group is None:
+            return all_perm
+        for perm in self.group.permissions.all():
+            all_perm.append(perm.codename)
+        print(all_perm)
+        return all_perm
+        
 
     def has_module_perms(self, app_label):
         return True
+
+
+
+
+class BroadCast_Email(models.Model):
+    permission_classes = (permissions.IsAuthenticated,)
+    subject = models.CharField(max_length=200)
+    created = models.DateTimeField(default=timezone.now)
+    message = RichTextUploadingField()
+
+    def __unicode__(self):
+        return self.subject
+
+    class Meta:
+        verbose_name = "BroadCast Email to all Member"
+        verbose_name_plural = "BroadCast Email"
